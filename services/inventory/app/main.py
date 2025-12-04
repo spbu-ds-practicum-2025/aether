@@ -3,8 +3,11 @@ import uvicorn
 from datetime import date
 from pydantic import BaseModel
 
+from app.rooms.router import router as router_rooms
 
 app = FastAPI()
+
+app.include_router(router_rooms)
 
 
 class Room(BaseModel):
@@ -29,7 +32,7 @@ class RoomSearchArgs:
         self.num_of_guests = num_of_guests
 
 
-@app.get("/rooms",
+@app.get("/room",
          tags=["rooms 🚪"],
          summary="Get all rooms",)
 def search(
@@ -46,7 +49,7 @@ def search(
     return rooms
 
 
-@app.get("/rooms/{room_id}",
+@app.get("/room/{room_id}",
          tags=["rooms 🚪"],
          summary="Get one room",)
 def get_room(room_id: int):
@@ -57,4 +60,4 @@ def get_room(room_id: int):
 
 
 if __name__ == "__main__":
-    uvicorn.run("main:app", reload=True)
+    uvicorn.run("app.main:app", reload=True)
