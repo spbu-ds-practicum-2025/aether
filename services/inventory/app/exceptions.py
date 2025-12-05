@@ -11,4 +11,4 @@ class RoomException(HTTPException):
 
 class RoomNotFoundException(RoomException):
     status_code = status.HTTP_404_NOT_FOUND
-    detail = "Room not found"
+    detail = "Room with that type not exist"

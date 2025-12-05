@@ -1,9 +1,8 @@
-from fastapi import FastAPI, HTTPException, Query, Depends
+from fastapi import FastAPI
 import uvicorn
-from datetime import date
-from pydantic import BaseModel
 
 from app.rooms.router import router as router_rooms
+
 
 app = FastAPI()
 
