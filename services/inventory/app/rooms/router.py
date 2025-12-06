@@ -2,7 +2,8 @@ from fastapi import APIRouter
 from datetime import date
 
 from app.rooms.repository import RoomDAO
-from app.rooms.schemas import SRooms
+from app.rooms.schemas import SRooms, SRoomsSearchParams, SRoomsAvailability
+from fastapi.params import Depends
 
 router = APIRouter(
     prefix="/rooms",
@@ -15,8 +16,8 @@ async def get_rooms() -> list[SRooms]:
 
 
 @router.get("/search")
-async def get_rooms_by_id_and_date(type_id: str, check_in: date, check_out: date):
-    return await RoomDAO.find_by_type_and_date(type_id, check_in, check_out)
+async def search(params: SRoomsSearchParams = Depends()) -> list[SRoomsAvailability]:
+    return await RoomDAO.search(params)
 
 
 @router.get("/{room_type_id}")

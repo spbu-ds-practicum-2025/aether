@@ -11,4 +11,14 @@ class RoomException(HTTPException):
 
 class RoomNotFoundException(RoomException):
     status_code = status.HTTP_404_NOT_FOUND
-    detail = "Room with that type not exist"
+    detail = "No available rooms with specified parameters was found."
+
+
+class RoomsValidationPriceException(RoomException):
+    status_code = status.HTTP_400_BAD_REQUEST
+    detail = "Fields 'min_price' and 'max_price' must be specified both or none."
+
+
+class RoomsValidationDateException(RoomException):
+    status_code = status.HTTP_400_BAD_REQUEST
+    detail = "Fields 'check_in' and 'check_out' must be specified both or none."
