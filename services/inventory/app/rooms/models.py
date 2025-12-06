@@ -1,5 +1,6 @@
 from app.database import Base
-from sqlalchemy import Column, Integer, String, ForeignKey, Date, DateTime, func, Computed
+from sqlalchemy import Column, Integer, String, ForeignKey, Date, DateTime, func
+from sqlalchemy.dialects.postgresql import UUID
 
 
 class RoomTypes(Base):
@@ -21,10 +22,11 @@ class InventoryDaily(Base):
     reserved_quantity = Column(Integer, nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
+
 class Operations(Base):
     __tablename__ = "operations"
 
-    operation_id = Column(Integer, primary_key=True)
+    uuid = Column(UUID(as_uuid=True), primary_key=True, nullable=False)
     status = Column(String, nullable=False)
     operation_type = Column(String, nullable=False)
     room_type_id = Column(ForeignKey("room_types.room_type_id"))

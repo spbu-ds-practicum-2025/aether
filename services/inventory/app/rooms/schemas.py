@@ -1,5 +1,6 @@
-from pydantic import BaseModel, root_validator, ValidationError
+from pydantic import BaseModel, root_validator
 from datetime import date
+from uuid import UUID
 
 from app.exceptions import RoomsValidationPriceException, RoomsValidationDateException
 
@@ -20,6 +21,7 @@ class SRoomsAvailability(SRooms):
 
 
 class SRoomsSearchParams(BaseModel):
+    room_type_id: str | None = None
     name: str | None = None
     adults: int | None = None
     min_price: int | None = None
@@ -38,3 +40,12 @@ class SRoomsSearchParams(BaseModel):
         if (check_in is None) != (check_out is None):
             raise RoomsValidationDateException()
         return values
+
+
+class SRoomsAddReservationParams(BaseModel):
+    uuid: UUID
+    room_type_id: str
+    check_in: date
+    check_out: date
+
+

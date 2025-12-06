@@ -206,4 +206,5 @@ INSERT INTO inventory_daily(room_type_id, date, reserved_quantity) VALUES
 ('STANDART_C', '2025-12-19', 11),
 ('STANDART_C', '2025-12-20', 12);
 
-INSERT INTO operations(operation_id, status, operation_type, room_type_id, check_in, check_out) VALUES
+INSERT INTO operations(uuid, status, operation_type, room_type_id, check_in, check_out) VALUES
+('782d859f-cb1c-4ac9-9f1f-3e2034fc2796', 'SUCCESS', 'RESERVE', 'DELUXE_A', '2025-12-05', '2025-12-10');

@@ -1,11 +1,10 @@
-from sqlalchemy import select, and_, or_, func, true
+from fastapi.openapi.models import Operation
+from sqlalchemy import select, and_, func, update
 
 from app.database import async_session_maker
-from app.rooms.models import RoomTypes, InventoryDaily
-from app.exceptions import RoomNotFoundException
-from app.rooms.schemas import SRoomsSearchParams
-
-from datetime import date
+from app.rooms.models import RoomTypes, InventoryDaily, Operations
+from app.exceptions import RoomNotFoundException, OperationAlreadyCompletedException, OperationAddFailedException
+from app.rooms.schemas import SRoomsSearchParams, SRoomsAddReservationParams
 
 
 class RoomDAO:
@@ -35,6 +34,8 @@ class RoomDAO:
 
             all_rooms = select(RoomTypes.__table__.columns)
 
+            if params.room_type_id is not None:
+                all_rooms = all_rooms.where(RoomTypes.room_type_id == params.room_type_id)
             if params.name is not None:
                 all_rooms = all_rooms.where(RoomTypes.name == params.name)
             if params.adults is not None:
@@ -93,3 +94,63 @@ class RoomDAO:
 
             return rooms
 
+
+    @classmethod
+    async def add_reservation(cls, params: SRoomsAddReservationParams):
+        async with async_session_maker() as session:
+            async with session.begin():
+                uuid_search = select(Operations.uuid).filter_by(uuid=params.uuid)
+                search_result = await session.scalar(uuid_search)
+
+                status = None
+                if search_result is not None:
+                    operation = select(Operations.status).where(
+                        Operations.uuid == params.uuid
+                    )
+                    status = (await session.execute(operation)).scalar_one_or_none()
+
+                    if status == "SUCCESS":
+                        raise OperationAlreadyCompletedException()
+
+                search_params = SRoomsSearchParams(room_type_id=params.room_type_id, check_in=params.check_in, check_out=params.check_out)
+                try:
+                    room = await RoomDAO.search(search_params)
+                except Exception as e:
+                    room = None
+
+                if room is not None:
+                    available_rooms = room[0]["available_quantity"]
+                else:
+                    available_rooms = 0
+
+                if available_rooms > 0:
+                    reserve = (
+                        update(InventoryDaily).where(
+                            and_(
+                                InventoryDaily.room_type_id == params.room_type_id,
+                                InventoryDaily.date >= params.check_in,
+                                InventoryDaily.date <= params.check_out
+                            )
+                        ).values(reserved_quantity = InventoryDaily.reserved_quantity + 1)
+                    )
+                    if status == "FAILED":
+                        operations_update = (
+                            update(Operations).where(
+                                Operations.uuid == params.uuid
+                            ).values(status = "SUCCESS")
+                        )
+                        await session.execute(operations_update)
+                    elif search_result is None:
+                        new_operation = Operations(uuid=params.uuid, status="SUCCESS", operation_type="RESERVE", room_type_id=params.room_type_id, check_in=params.check_in, check_out=params.check_out)
+                        session.add(new_operation)
+                    await session.execute(reserve)
+                    await session.commit()
+                    return "SUCCESS"
+                else:
+                    if status == "FAILED":
+                        raise OperationAddFailedException
+                    elif search_result is None:
+                        new_operation = Operations(uuid=params.uuid, status="FAILED", operation_type="RESERVE", room_type_id=params.room_type_id, check_in=params.check_in, check_out=params.check_out)
+                        session.add(new_operation)
+                        await session.commit()
+                        raise OperationAddFailedException
