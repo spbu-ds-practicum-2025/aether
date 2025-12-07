@@ -1,5 +1,5 @@
 from fastapi.openapi.models import Operation
-from pydantic.schema import timedelta
+from datetime import timedelta
 from sqlalchemy import select, and_, func, update, insert
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
@@ -20,7 +20,7 @@ class RoomDAO:
 
 
     @classmethod
-    async def find_by_room_type_id(cls, type_id: int):
+    async def find_by_room_type_id(cls, type_id: str):
         async with async_session_maker() as session:
             query = select(RoomTypes.__table__.columns).filter_by(room_type_id=type_id)
             rooms = await session.execute(query)
@@ -57,7 +57,7 @@ class RoomDAO:
                     and_(
                         InventoryDaily.room_type_id.in_(select(all_rooms.c.room_type_id)),
                         InventoryDaily.date >= params.check_in,
-                        InventoryDaily.date <= params.check_out
+                        InventoryDaily.date < params.check_out
                     )
                 ).cte("booked_rooms")
 
@@ -96,7 +96,6 @@ class RoomDAO:
 
             return rooms
 
-
     @classmethod
     async def add_reservation(cls, params: SRoomsReservationParams):
         async with async_session_maker() as session:
@@ -114,34 +113,50 @@ class RoomDAO:
                     if status == "SUCCESS":
                         raise OperationAlreadyCompletedException()
 
-                search_params = SRoomsSearchParams(room_type_id=params.room_type_id, check_in=params.check_in, check_out=params.check_out)
-                try:
-                    room = await RoomDAO.search(search_params)
-                except Exception as e:
-                    room = None
+                total_quantity_query = select(RoomTypes.total_quantity).where(
+                    RoomTypes.room_type_id == params.room_type_id
+                )
+                total_quantity = (await session.execute(total_quantity_query)).scalar_one_or_none()
+                if total_quantity is None:
+                    raise RoomNotFoundException()
 
-                if room is not None:
-                    available_rooms = room[0]["available_quantity"]
-                else:
-                    available_rooms = 0
+                values = []
+                d = params.check_in
+                while d <= params.check_out:
+                    values.append({
+                        "room_type_id": params.room_type_id,
+                        "date": d,
+                        "reserved_quantity": 0,
+                    })
+                    d += timedelta(days=1)
 
-                if available_rooms > 0:
-                    values = []
-                    d = params.check_in
-                    while d <= params.check_out:
-                        values.append({
-                            "room_type_id": params.room_type_id,
-                            "date": d,
-                            "reserved_quantity": 0,
-                        })
-                        d += timedelta(days=1)
-
+                if values:
                     rows_add = pg_insert(InventoryDaily.__table__).values(values)
-                    rows_add = rows_add.on_conflict_do_nothing(index_elements=["room_type_id", "date"])
-
+                    rows_add = rows_add.on_conflict_do_nothing(
+                        index_elements=["room_type_id", "date"]
+                    )
                     await session.execute(rows_add)
                     await session.flush()
 
+                booked_rooms_query = (
+                    select(InventoryDaily.reserved_quantity)
+                    .where(
+                        and_(
+                            InventoryDaily.room_type_id == params.room_type_id,
+                            InventoryDaily.date >= params.check_in,
+                            InventoryDaily.date <= params.check_out,
+                        )
+                    )
+                    .with_for_update()
+                )
+
+                booked_rows = await session.execute(booked_rooms_query)
+                reserved_quantities = booked_rows.scalars().all()
+
+                max_reserved_quantity = max(reserved_quantities) if reserved_quantities else 0
+                available_rooms = total_quantity - max_reserved_quantity
+
+                if available_rooms > 0:
                     reserve = (
                         update(InventoryDaily).where(
                             and_(
@@ -149,18 +164,27 @@ class RoomDAO:
                                 InventoryDaily.date >= params.check_in,
                                 InventoryDaily.date <= params.check_out
                             )
-                        ).values(reserved_quantity = InventoryDaily.reserved_quantity + 1)
+                        ).values(reserved_quantity=InventoryDaily.reserved_quantity + 1)
                     )
+
                     if status == "FAILED":
                         operations_update = (
-                            update(Operations).where(
-                                Operations.uuid == params.uuid
-                            ).values(status = "SUCCESS")
+                                update(Operations).where(
+                                    Operations.uuid == params.uuid
+                                ).values(status="SUCCESS")
                         )
                         await session.execute(operations_update)
                     elif search_result is None:
-                        new_operation = Operations(uuid=params.uuid, status="SUCCESS", operation_type="RESERVE", room_type_id=params.room_type_id, check_in=params.check_in, check_out=params.check_out)
+                        new_operation = Operations(
+                            uuid=params.uuid,
+                            status="SUCCESS",
+                            operation_type="RESERVE",
+                            room_type_id=params.room_type_id,
+                            check_in=params.check_in,
+                            check_out=params.check_out,
+                        )
                         session.add(new_operation)
+
                     await session.execute(reserve)
                     await session.commit()
                     return "SUCCESS"
@@ -168,7 +192,14 @@ class RoomDAO:
                     if status == "FAILED":
                         raise OperationAddFailedException
                     elif search_result is None:
-                        new_operation = Operations(uuid=params.uuid, status="FAILED", operation_type="RESERVE", room_type_id=params.room_type_id, check_in=params.check_in, check_out=params.check_out)
+                        new_operation = Operations(
+                            uuid=params.uuid,
+                            status="FAILED",
+                            operation_type="RESERVE",
+                            room_type_id=params.room_type_id,
+                            check_in=params.check_in,
+                            check_out=params.check_out,
+                        )
                         session.add(new_operation)
                         await session.commit()
                         raise OperationAddFailedException
