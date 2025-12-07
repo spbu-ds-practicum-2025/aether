@@ -1,5 +1,7 @@
 from fastapi.openapi.models import Operation
-from sqlalchemy import select, and_, func, update
+from pydantic.schema import timedelta
+from sqlalchemy import select, and_, func, update, insert
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from app.database import async_session_maker
 from app.rooms.models import RoomTypes, InventoryDaily, Operations
@@ -124,6 +126,22 @@ class RoomDAO:
                     available_rooms = 0
 
                 if available_rooms > 0:
+                    values = []
+                    d = params.check_in
+                    while d <= params.check_out:
+                        values.append({
+                            "room_type_id": params.room_type_id,
+                            "date": d,
+                            "reserved_quantity": 0,
+                        })
+                        d += timedelta(days=1)
+
+                    rows_add = pg_insert(InventoryDaily.__table__).values(values)
+                    rows_add = rows_add.on_conflict_do_nothing(index_elements=["room_type_id", "date"])
+
+                    await session.execute(rows_add)
+                    await session.flush()
+
                     reserve = (
                         update(InventoryDaily).where(
                             and_(

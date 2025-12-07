@@ -1,5 +1,5 @@
 from app.database import Base
-from sqlalchemy import Column, Integer, String, ForeignKey, Date, DateTime, func
+from sqlalchemy import Column, Integer, String, ForeignKey, Date, DateTime, func, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 
 
@@ -21,6 +21,10 @@ class InventoryDaily(Base):
     date = Column(Date, nullable=False)
     reserved_quantity = Column(Integer, nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint('room_type_id', 'date', name='unique_room_type_id'),
+    )
 
 
 class Operations(Base):
