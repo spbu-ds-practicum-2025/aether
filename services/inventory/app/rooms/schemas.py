@@ -42,7 +42,7 @@ class SRoomsSearchParams(BaseModel):
         return values
 
 
-class SRoomsAddReservationParams(BaseModel):
+class SRoomsReservationParams(BaseModel):
     uuid: UUID
     room_type_id: str
     check_in: date

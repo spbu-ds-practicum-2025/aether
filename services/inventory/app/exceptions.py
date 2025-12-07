@@ -49,3 +49,11 @@ class OperationAddFailedException(OperationException):
         "status": "fail",
         "msg": "Operation failed, no available rooms."
     }
+
+
+class OperationDelFailedException(OperationException):
+    status_code = status.HTTP_409_CONFLICT
+    detail = {
+        "status": "fail",
+        "msg": "Operation failed, no rooms to release."
+    }

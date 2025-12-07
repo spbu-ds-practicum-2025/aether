@@ -3,8 +3,8 @@ from sqlalchemy import select, and_, func, update
 
 from app.database import async_session_maker
 from app.rooms.models import RoomTypes, InventoryDaily, Operations
-from app.exceptions import RoomNotFoundException, OperationAlreadyCompletedException, OperationAddFailedException
-from app.rooms.schemas import SRoomsSearchParams, SRoomsAddReservationParams
+from app.exceptions import RoomNotFoundException, OperationAlreadyCompletedException, OperationAddFailedException, OperationDelFailedException
+from app.rooms.schemas import SRoomsSearchParams, SRoomsReservationParams
 
 
 class RoomDAO:
@@ -96,7 +96,7 @@ class RoomDAO:
 
 
     @classmethod
-    async def add_reservation(cls, params: SRoomsAddReservationParams):
+    async def add_reservation(cls, params: SRoomsReservationParams):
         async with async_session_maker() as session:
             async with session.begin():
                 uuid_search = select(Operations.uuid).filter_by(uuid=params.uuid)
@@ -154,3 +154,75 @@ class RoomDAO:
                         session.add(new_operation)
                         await session.commit()
                         raise OperationAddFailedException
+
+
+    @classmethod
+    async def del_reservation(cls, params: SRoomsReservationParams):
+        async with async_session_maker() as session:
+            async with session.begin():
+                uuid_search = select(Operations.uuid).filter_by(uuid=params.uuid)
+                search_result = await session.scalar(uuid_search)
+
+                status = None
+                if search_result is not None:
+                    operation = select(Operations.status).where(
+                        Operations.uuid == params.uuid
+                    )
+                    status = (await session.execute(operation)).scalar_one_or_none()
+
+                    if status == "SUCCESS":
+                        raise OperationAlreadyCompletedException()
+
+                total_quantity = select(RoomTypes.total_quantity).where(
+                    RoomTypes.room_type_id == params.room_type_id
+                )
+
+                booked_rooms = select(InventoryDaily.__table__.columns).where(
+                    and_(
+                        InventoryDaily.room_type_id == params.room_type_id,
+                        InventoryDaily.date >= params.check_in,
+                        InventoryDaily.date <= params.check_out
+                    )
+                ).cte("booked_rooms")
+
+                min_reserved = select(
+                    func.coalesce(func.min(booked_rooms.c.reserved_quantity).label('min_reserved_quantity'), 0)
+                )
+
+                min_reserved_num = (await session.execute(min_reserved)).scalar_one_or_none()
+
+                if min_reserved_num > 0:
+                    release = (
+                        update(InventoryDaily).where(
+                            and_(
+                                InventoryDaily.room_type_id == params.room_type_id,
+                                InventoryDaily.date >= params.check_in,
+                                InventoryDaily.date <= params.check_out
+                            )
+                        ).values(reserved_quantity=InventoryDaily.reserved_quantity - 1)
+                    )
+                    if status == "FAILED":
+                        operations_update = (
+                            update(Operations).where(
+                                Operations.uuid == params.uuid
+                            ).values(status="SUCCESS")
+                        )
+                        await session.execute(operations_update)
+                    elif search_result is None:
+                        new_operation = Operations(uuid=params.uuid, status="SUCCESS", operation_type="RELEASE",
+                                                   room_type_id=params.room_type_id, check_in=params.check_in,
+                                                   check_out=params.check_out)
+                        session.add(new_operation)
+                    await session.execute(release)
+                    await session.commit()
+                    return "SUCCESS"
+                else:
+                    if status == "FAILED":
+                        raise OperationDelFailedException
+                    elif search_result is None:
+                        new_operation = Operations(uuid=params.uuid, status="FAILED", operation_type="RELEASE",
+                                                   room_type_id=params.room_type_id, check_in=params.check_in,
+                                                   check_out=params.check_out)
+                        session.add(new_operation)
+                        await session.commit()
+                        raise OperationDelFailedException

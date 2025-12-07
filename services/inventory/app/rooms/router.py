@@ -2,7 +2,7 @@ from fastapi import APIRouter
 from fastapi.params import Depends
 
 from app.rooms.repository import RoomDAO
-from app.rooms.schemas import SRooms, SRoomsSearchParams, SRoomsAvailability, SRoomsAddReservationParams
+from app.rooms.schemas import SRooms, SRoomsSearchParams, SRoomsAvailability, SRoomsReservationParams
 
 
 router = APIRouter(
@@ -22,8 +22,13 @@ async def search(params: SRoomsSearchParams = Depends()) -> list[SRoomsAvailabil
 
 
 @router.post("/reserve")
-async def reserve(params: SRoomsAddReservationParams = Depends()):
+async def reserve(params: SRoomsReservationParams = Depends()):
     return await RoomDAO.add_reservation(params)
+
+
+@router.post("/release")
+async def release(params: SRoomsReservationParams = Depends()):
+    return await RoomDAO.del_reservation(params)
 
 
 @router.get("/{room_type_id}")
