@@ -144,7 +144,7 @@ class RoomDAO:
                         and_(
                             InventoryDaily.room_type_id == params.room_type_id,
                             InventoryDaily.date >= params.check_in,
-                            InventoryDaily.date <= params.check_out,
+                            InventoryDaily.date < params.check_out,
                         )
                     )
                     .with_for_update()
@@ -230,7 +230,7 @@ class RoomDAO:
                     and_(
                         InventoryDaily.room_type_id == params.room_type_id,
                         InventoryDaily.date >= params.check_in,
-                        InventoryDaily.date <= params.check_out
+                        InventoryDaily.date < params.check_out
                     )
                 ).cte("booked_rooms")
 

@@ -2,7 +2,7 @@
 .vscode/
 .idea/
 #environment
-.env
+.env*
 
 #python
 __pycache__
