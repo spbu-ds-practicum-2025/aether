@@ -22,12 +22,12 @@ async def search(params: SRoomsSearchParams = Depends()) -> list[SRoomsAvailabil
 
 
 @router.post("/reserve")
-async def reserve(params: SRoomsReservationParams = Depends()):
+async def reserve(params: SRoomsReservationParams):
     return await RoomDAO.add_reservation(params)
 
 
 @router.post("/release")
-async def release(params: SRoomsReservationParams = Depends()):
+async def release(params: SRoomsReservationParams):
     return await RoomDAO.del_reservation(params)
 
 

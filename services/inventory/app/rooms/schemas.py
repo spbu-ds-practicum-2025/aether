@@ -1,6 +1,7 @@
 from pydantic import BaseModel, root_validator
 from datetime import date
 from uuid import UUID
+from typing import Literal
 
 from app.exceptions import RoomsValidationPriceException, RoomsValidationDateException
 
@@ -17,7 +18,7 @@ class SRooms(BaseModel):
 
 
 class SRoomsAvailability(SRooms):
-    available_quantity: int
+    available_quantity: int | None = None
 
 
 class SRoomsSearchParams(BaseModel):
@@ -47,5 +48,15 @@ class SRoomsReservationParams(BaseModel):
     room_type_id: str
     check_in: date
     check_out: date
+
+
+class SInventoryOperationResult(BaseModel):
+    status: Literal['success', 'failure']
+    uuid: UUID
+    operation: Literal['RESERVE', 'RELEASE']
+    room_type_id: str
+    check_in: date
+    check_out: date
+    massage: str | None = None
 
 

@@ -6,7 +6,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from app.database import async_session_maker
 from app.rooms.models import RoomTypes, InventoryDaily, Operations
 from app.exceptions import RoomNotFoundException, OperationAlreadyCompletedException, OperationAddFailedException, OperationDelFailedException
-from app.rooms.schemas import SRoomsSearchParams, SRoomsReservationParams
+from app.rooms.schemas import SRoomsSearchParams, SRoomsReservationParams, SInventoryOperationResult
 
 
 class RoomDAO:
@@ -91,9 +91,6 @@ class RoomDAO:
                 rooms = await session.execute(all_rooms)
 
             rooms = rooms.mappings().all()
-            if len(rooms) == 0:
-                raise RoomNotFoundException()
-
             return rooms
 
     @classmethod
@@ -111,7 +108,15 @@ class RoomDAO:
                     status = (await session.execute(operation)).scalar_one_or_none()
 
                     if status == "SUCCESS":
-                        raise OperationAlreadyCompletedException()
+                        return SInventoryOperationResult(
+                            status = "success",
+                            uuid = params.uuid,
+                            operation = 'RESERVE',
+                            room_type_id = params.room_type_id,
+                            check_in = params.check_in,
+                            check_out = params.check_out,
+                            massage = "operation was already completed",
+                        )
 
                 total_quantity_query = select(RoomTypes.total_quantity).where(
                     RoomTypes.room_type_id == params.room_type_id
@@ -162,7 +167,7 @@ class RoomDAO:
                             and_(
                                 InventoryDaily.room_type_id == params.room_type_id,
                                 InventoryDaily.date >= params.check_in,
-                                InventoryDaily.date <= params.check_out
+                                InventoryDaily.date < params.check_out
                             )
                         ).values(reserved_quantity=InventoryDaily.reserved_quantity + 1)
                     )
@@ -187,7 +192,15 @@ class RoomDAO:
 
                     await session.execute(reserve)
                     await session.commit()
-                    return "SUCCESS"
+                    return SInventoryOperationResult(
+                        status="success",
+                        uuid=params.uuid,
+                        operation='RESERVE',
+                        room_type_id=params.room_type_id,
+                        check_in=params.check_in,
+                        check_out=params.check_out,
+                        massage="operation was successfully completed",
+                    )
                 else:
                     if status == "FAILED":
                         raise OperationAddFailedException
@@ -220,7 +233,15 @@ class RoomDAO:
                     status = (await session.execute(operation)).scalar_one_or_none()
 
                     if status == "SUCCESS":
-                        raise OperationAlreadyCompletedException()
+                        return SInventoryOperationResult(
+                            status="success",
+                            uuid=params.uuid,
+                            operation='RESERVE',
+                            room_type_id=params.room_type_id,
+                            check_in=params.check_in,
+                            check_out=params.check_out,
+                            massage="operation was already completed",
+                        )
 
                 total_quantity = select(RoomTypes.total_quantity).where(
                     RoomTypes.room_type_id == params.room_type_id
@@ -246,7 +267,7 @@ class RoomDAO:
                             and_(
                                 InventoryDaily.room_type_id == params.room_type_id,
                                 InventoryDaily.date >= params.check_in,
-                                InventoryDaily.date <= params.check_out
+                                InventoryDaily.date < params.check_out
                             )
                         ).values(reserved_quantity=InventoryDaily.reserved_quantity - 1)
                     )
@@ -264,7 +285,15 @@ class RoomDAO:
                         session.add(new_operation)
                     await session.execute(release)
                     await session.commit()
-                    return "SUCCESS"
+                    return SInventoryOperationResult(
+                        status="success",
+                        uuid=params.uuid,
+                        operation='RESERVE',
+                        room_type_id=params.room_type_id,
+                        check_in=params.check_in,
+                        check_out=params.check_out,
+                        massage="operation was successfully completed",
+                    )
                 else:
                     if status == "FAILED":
                         raise OperationDelFailedException
