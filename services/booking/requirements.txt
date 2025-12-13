@@ -1,0 +1,9 @@
+# services/booking/requirements.txt (УПРОЩЕННАЯ ВЕРСИЯ БЕЗ C/Rust ЗАВИСИМОСТЕЙ)
+fastapi
+uvicorn                     # Теперь без [standard], чтобы не тащить watchfiles
+pydantic==1.*
+sqlalchemy                  # Теперь без [asyncio]
+psycopg             # Замена asyncpg (C-зависимость)
+alembic
+python-dotenv
+httpx
