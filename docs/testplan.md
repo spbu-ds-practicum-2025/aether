@@ -60,7 +60,15 @@
 ### Тест 1.3: Подтверждение hold
 **Цель**: убедиться, что подтверждение переводит hold в бронирование, сохраняя резерв.
 
-**Предусловия**: создан hold из теста 1.2 (`hold_id` известен).
+**Предусловия**: создан hold `POST http://localhost:8080/holds` с телом:
+   ```json
+   {
+     "room_type_id": "STANDART_A",
+     "check_in": "2025-12-10",
+     "check_out": "2025-12-12",
+     "adults": 2
+   }
+   ```
 
 **Шаги**:
 1. `POST http://localhost:8080/holds/{hold_id}/confirm`
@@ -83,22 +91,6 @@
 **Ожидаемый результат**:
 - Шаг 2: HTTP 200, `status: "CANCELLED"`.
 - Шаг 3: `available_quantity` вернулось к исходным 9.
-
-### Тест 1.5: Полный цикл бронирования через Gateway
-**Цель**: показать сквозной сценарий search → hold → confirm → проверка инвентаря.
-
-**Предусловия**: сидовое состояние.
-
-**Шаги**:
-1. Поиск: `GET http://localhost:8080/search?...` (как в тесте 1.1) — зафиксировать `available_quantity=5`.
-2. Hold: `POST /holds` для `STANDART_A` (новый hold).
-3. Confirm: `POST /holds/{hold_id}/confirm`.
-4. Проверка доступности: `GET /rooms/search` для `STANDART_A` тех же дат.
-
-**Ожидаемый результат**:
-- Hold → HTTP 201, `status: "HOLD"`.
-- Confirm → HTTP 200, `status: "CONFIRMED"`, `booking_id` выдан.
-- Итоговая доступность `STANDART_A` = 4; нет расхождений с Inventory.
 
 ## 2. Ошибки бизнес-логики
 
@@ -218,3 +210,19 @@
 - В Booking: 1 запись со статусом CONFIRMED, 1 со статусом CANCELLED.
 - В Inventory: `available_quantity` = 4 (начально 5, минус один подтвержденный; отмененный не влияет).
 - Нет расхождений: сумма подтвержденных резервов = 1, что совпадает с уменьшением доступности.
+
+### Тест 5: Полный цикл бронирования через Gateway
+**Цель**: показать сквозной сценарий search → hold → confirm → проверка инвентаря.
+
+**Предусловия**: сидовое состояние.
+
+**Шаги**:
+1. Поиск: `GET http://localhost:8080/search?adults=4&min_price=8000&max_price=15000&check_in=2025-12-10&check_out=2025-12-12` — зафиксировать `available_quantity=5`.
+2. Hold: `POST /holds` для `STANDART_A` (новый hold).
+3. Confirm: `POST /holds/{hold_id}/confirm`.
+4. Проверка доступности: `GET /rooms/search` для `STANDART_A` тех же дат.
+
+**Ожидаемый результат**:
+- Hold → HTTP 201, `status: "HOLD"`.
+- Confirm → HTTP 200, `status: "CONFIRMED"`, `booking_id` выдан.
+- Итоговая доступность `STANDART_A` = 4; нет расхождений с Inventory.
