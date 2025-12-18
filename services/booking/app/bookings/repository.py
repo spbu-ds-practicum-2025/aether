@@ -7,7 +7,6 @@ from sqlalchemy import insert
 from fastapi import Depends 
 
 from app.bookings.models import Booking
-# ИСПРАВЛЕНИЕ 2: Добавлен импорт get_async_session для функции-зависимости
 from app.database.engine import AsyncSessionLocal, get_async_session 
 from dotenv import load_dotenv
 
@@ -113,11 +112,14 @@ class BookingRepository:
                 "check_in": booking.check_in.isoformat(),
                 "check_out": booking.check_out.isoformat()
             }
-            # Используем путь /release согласно логике ТР
-            response = await client.post(f"{INVENTORY_URL}/rooms/release", json=release_body)
-            response.raise_for_status()
+            response = await client.post(
+                f"{INVENTORY_URL}/rooms/release", 
+                json=release_body
+            )
+            
+            if response.status_code not in [200, 201]:
+                raise Exception(f"Inventory release failed: {response.text}")
 
-        # 3. Обновляем статус у себя
         booking.status = "CANCELED"
         await self.db.commit()
         return booking
