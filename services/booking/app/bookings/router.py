@@ -45,3 +45,25 @@ async def get_holds(
 ):
     """Возвращает список броней пользователя (Сценарий 4 из ТР)."""
     return await repo.get_all_holds(user_id)
+
+@router.post("/{hold_id}/confirm")
+async def confirm_hold(
+    hold_id: uuid.UUID,
+    repo: BookingRepository = Depends(get_booking_repository)
+):
+    """Подтверждение брони (Сценарий 3 из ТР)."""
+    updated = await repo.confirm_booking(hold_id)
+    if not updated:
+        raise HTTPException(status_code=404, detail="Hold not found or already confirmed")
+    return {"id": updated.id, "status": updated.status}
+
+@router.post("/{hold_id}/cancel")
+async def cancel_hold(
+    hold_id: uuid.UUID,
+    repo: BookingRepository = Depends(get_booking_repository)
+):
+    """Отмена брони (Сценарий 5 из ТР)."""
+    cancelled = await repo.cancel_booking(hold_id)
+    if not cancelled:
+        raise HTTPException(status_code=404, detail="Booking not found or already cancelled")
+    return {"id": cancelled.id, "status": cancelled.status}

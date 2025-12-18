@@ -80,6 +80,47 @@ class BookingRepository:
         
         result = await self.db.execute(query)
         return result.scalars().all()
+    
+    async def confirm_booking(self, hold_id: uuid.UUID):
+        """Сценарий 3: Перевод резерва в статус подтвержденной брони."""
+        from sqlalchemy import update
+        stmt = (
+            update(Booking)
+            .where(Booking.id == hold_id, Booking.status == "HOLD")
+            .values(status="CONFIRMED")
+            .returning(Booking.id, Booking.status)
+        )
+        result = await self.db.execute(stmt)
+        await self.db.commit()
+        return result.one_or_none()
+    
+    async def cancel_booking(self, hold_id: uuid.UUID):
+        """Сценарий 5: Отмена брони и вызов Inventory для освобождения дат."""
+        from sqlalchemy import select, update
+        
+        # 1. Находим бронь, чтобы получить данные для Inventory Service
+        query = select(Booking).where(Booking.id == hold_id)
+        booking = (await self.db.execute(query)).scalar_one_or_none()
+        
+        if not booking or booking.status == "CANCELED":
+            return None
+
+        # 2. Вызов Inventory Service (release)
+        async with httpx.AsyncClient() as client:
+            release_body = {
+                "uuid": str(booking.inventory_op_uuid),
+                "room_type_id": booking.room_type_id,
+                "check_in": booking.check_in.isoformat(),
+                "check_out": booking.check_out.isoformat()
+            }
+            # Используем путь /release согласно логике ТР
+            response = await client.post(f"{INVENTORY_URL}/rooms/release", json=release_body)
+            response.raise_for_status()
+
+        # 3. Обновляем статус у себя
+        booking.status = "CANCELED"
+        await self.db.commit()
+        return booking
 
 async def get_booking_repository(db: AsyncSession = Depends(get_async_session)):
     return BookingRepository(db)
