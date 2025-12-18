@@ -131,10 +131,10 @@ class BookingRepository:
         
         results = []
         for b in expired_bookings:
-            # Для каждого вызываем release в Inventory и ставим EXPIRED
             try:
-                await self.cancel_booking(b.id) # Переиспользуем логику отмены
-                b.status = "EXPIRED"
+                # Выполняем отмену. Важно: cancel_booking должен делать commit сам 
+                # или мы должны убрать commit из него и делать один здесь.
+                await self.cancel_booking(b.id)
                 results.append(b.id)
             except Exception as e:
                 print(f"Failed to expire {b.id}: {e}")
