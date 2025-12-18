@@ -4,7 +4,8 @@ import httpx
 from datetime import datetime, timedelta, date
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import insert
-from fastapi import Depends 
+from fastapi import Depends
+from app.bookings.models import Booking, OutboxEvent
 
 from app.bookings.models import Booking
 from app.database.engine import AsyncSessionLocal, get_async_session 
@@ -64,7 +65,7 @@ class BookingRepository:
         return new_booking
     
     async def get_all_holds(self, user_id: str = None):
-        """Получение списка всех броней. Если передан user_id — фильтруем по нему."""
+        """Сценарий 4: Получение списка броней."""
         from sqlalchemy import select
         query = select(Booking)
         if user_id:

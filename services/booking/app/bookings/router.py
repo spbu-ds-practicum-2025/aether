@@ -70,9 +70,12 @@ async def cancel_hold(
     return {"id": cancelled.id, "status": cancelled.status}
 
 @router.post("/internal/expire")
-async def trigger_expiration(
+async def expire_holds(
     repo: BookingRepository = Depends(get_booking_repository)
 ):
-    """Ручка для ручного или программного вызова очистки просроченных броней."""
+    """
+    Технический эндпоинт для запуска очистки. 
+    В реальной жизни его будет дергать Cron или специальный Task Scheduler.
+    """
     expired_ids = await repo.expire_old_holds()
     return {"status": "success", "expired_count": len(expired_ids), "ids": expired_ids}

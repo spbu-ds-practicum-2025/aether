@@ -18,8 +18,7 @@ class HoldCreateSchema(BaseModel):
 
     @validator('check_out')
     def validate_dates(cls, v, values):
-        # Твоя существующая логика сравнения check_in и check_out
-        if 'check_in' in values and v <= values['check_in']]:
+        if 'check_in' in values and v <= values['check_in']: # Было ]]
             raise ValueError('check_out must be strictly after check_in date.')
         return v
 

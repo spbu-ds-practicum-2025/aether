@@ -7,3 +7,4 @@ psycopg             # Замена asyncpg (C-зависимость)
 alembic
 python-dotenv
 httpx
+aio-pika
