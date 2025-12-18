@@ -4,7 +4,7 @@ import httpx
 from datetime import datetime, timedelta, date
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import insert
-from fastapi import Depends # <--- ИСПРАВЛЕНИЕ 1: Добавлен импорт Depends
+from fastapi import Depends 
 
 from app.bookings.models import Booking
 # ИСПРАВЛЕНИЕ 2: Добавлен импорт get_async_session для функции-зависимости
