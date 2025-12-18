@@ -121,6 +121,29 @@ class BookingRepository:
         booking.status = "CANCELED"
         await self.db.commit()
         return booking
+    
+    async def expire_old_holds(self):
+        """Технический сценарий: поиск и отмена просроченных HOLD."""
+        from sqlalchemy import select
+        # 1. Ищем все просроченные HOLD (используем ваш индекс idx_status_expires)
+        query = select(Booking).where(
+            Booking.status == "HOLD",
+            Booking.ttl_expires_at <= datetime.utcnow()
+        )
+        expired_bookings = (await self.db.execute(query)).scalars().all()
+        
+        results = []
+        for b in expired_bookings:
+            # Для каждого вызываем release в Inventory и ставим EXPIRED
+            try:
+                await self.cancel_booking(b.id) # Переиспользуем логику отмены
+                b.status = "EXPIRED"
+                results.append(b.id)
+            except Exception as e:
+                print(f"Failed to expire {b.id}: {e}")
+        
+        await self.db.commit()
+        return results
 
 async def get_booking_repository(db: AsyncSession = Depends(get_async_session)):
     return BookingRepository(db)

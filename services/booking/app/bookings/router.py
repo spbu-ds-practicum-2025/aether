@@ -67,3 +67,11 @@ async def cancel_hold(
     if not cancelled:
         raise HTTPException(status_code=404, detail="Booking not found or already cancelled")
     return {"id": cancelled.id, "status": cancelled.status}
+
+@router.post("/internal/expire")
+async def trigger_expiration(
+    repo: BookingRepository = Depends(get_booking_repository)
+):
+    """Ручка для ручного или программного вызова очистки просроченных броней."""
+    expired_ids = await repo.expire_old_holds()
+    return {"status": "success", "expired_count": len(expired_ids), "ids": expired_ids}
