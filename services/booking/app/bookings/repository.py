@@ -70,6 +70,16 @@ class BookingRepository:
 
         # Получаем данные созданного резерва
         return result.one()
+    
+    async def get_all_holds(self, user_id: str = None):
+        """Получение списка всех броней. Если передан user_id — фильтруем по нему."""
+        from sqlalchemy import select
+        query = select(Booking)
+        if user_id:
+            query = query.where(Booking.user_id == user_id)
+        
+        result = await self.db.execute(query)
+        return result.scalars().all()
 
 async def get_booking_repository(db: AsyncSession = Depends(get_async_session)):
     return BookingRepository(db)

@@ -37,3 +37,11 @@ async def create_new_hold(
     except Exception as e:
         # Для других непредвиденных ошибок
         raise HTTPException(status_code=500, detail=f"Internal server error: {e}")
+    
+@router.get("/", response_model=list[HoldResponseSchema])
+async def get_holds(
+    user_id: str = None,
+    repo: BookingRepository = Depends(get_booking_repository)
+):
+    """Возвращает список броней пользователя (Сценарий 4 из ТР)."""
+    return await repo.get_all_holds(user_id)
