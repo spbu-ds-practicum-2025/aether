@@ -1,0 +1,21 @@
+version: '3.8'
+
+services:
+  # Твоя база данных
+  db:
+    image: postgres:15
+    container_name: booking_db_cont
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: YOUR_REAL_PASSWORD
+      POSTGRES_DB: booking_db
+    ports:
+      - "5433:5432"
+
+  # Твой брокер сообщений
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: rabbitmq_cont
+    ports:
+      - "5672:5672"   # Порт для подключения сервиса
+      - "15672:15672" # Порт для админки в браузере

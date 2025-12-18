@@ -2,13 +2,17 @@ import os
 import uuid
 import httpx
 from datetime import datetime, timedelta, date
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import insert
-from fastapi import Depends
-from app.bookings.models import Booking, OutboxEvent
 
-from app.bookings.models import Booking
+from fastapi import Depends
+
+# SQLAlchemy импорты
+from sqlalchemy import select, update, insert
+from sqlalchemy.ext.asyncio import AsyncSession
+
+# Модели и база
+from app.bookings.models import Booking, OutboxEvent
 from app.database.engine import AsyncSessionLocal, get_async_session 
+
 from dotenv import load_dotenv
 
 # Загружаем URL Inventory Service
@@ -25,7 +29,7 @@ class BookingRepository:
         inventory_op_uuid = uuid.uuid4()
         expires_at = datetime.utcnow() + timedelta(minutes=self.TTL_MINUTES)
         
-        # 1. Создаем запись в статусе HOLD, но коммитим её только после Inventory
+        # 1. Создаем запись в статусе HOLD
         new_booking = Booking(
             inventory_op_uuid=inventory_op_uuid,
             user_id=user_id,
@@ -36,7 +40,7 @@ class BookingRepository:
             ttl_expires_at=expires_at
         )
         self.db.add(new_booking)
-        await self.db.flush() # Получаем ID, но транзакция еще открыта
+        await self.db.flush() 
 
         # 2. Запрос к Inventory Service
         inventory_payload = {
@@ -45,7 +49,6 @@ class BookingRepository:
             "check_in": check_in.isoformat(),
             "check_out": check_out.isoformat()
         }
-
         try:
             async with httpx.AsyncClient() as client:
                 response = await client.post(
@@ -53,13 +56,25 @@ class BookingRepository:
                     json=inventory_payload,
                     timeout=5.0
                 )
+                # Проверяем на 4xx и 5xx ошибки
                 response.raise_for_status()
-        except Exception as e:
-            # Если Inventory недоступен или вернул ошибку — откатываем всё
-            await self.db.rollback()
-            raise ValueError(f"Inventory reservation failed: {str(e)}")
+                
+                # Читаем JSON ответ от напарника
+                data = response.json()
+                
+                # Проверяем бизнес-логику напарника (статус 'failure')
+                if data.get("status") == "failure":
+                    # Используем его опечатку 'massage' из schemas.py
+                    error_msg = data.get("massage") or "No availability"
+                    raise ValueError(f"Inventory Service refused: {error_msg}")
 
-        # 3. Если всё успешно — коммитим нашу бронь
+        except Exception as e:
+            # Если возникла любая ошибка (сеть или отказ инвентаря) — откатываем базу
+            await self.db.rollback()
+            # Пробрасываем ошибку дальше, чтобы FastAPI вернул её пользователю
+            raise ValueError(f"Booking failed: {str(e)}")
+
+        # 3. Если всё успешно — фиксируем изменения в нашей БД
         await self.db.commit()
         await self.db.refresh(new_booking)
         return new_booking

@@ -1,10 +1,11 @@
 from fastapi import APIRouter, HTTPException, Depends
 import uuid
-# Добавьте явный импорт схемы:
+# Импорт схем
 from app.bookings.schemas import HoldCreateSchema, HoldResponseSchema 
 from app.bookings.repository import BookingRepository, get_booking_repository
 
-router = APIRouter(prefix=\"/holds\", tags=[\"Holds and Bookings\"])
+# ИСПРАВЛЕНО: убраны лишние \ перед кавычками
+router = APIRouter(prefix="/holds", tags=["Holds and Bookings"])
 
 # Роут для создания резерва (Hold)
 @router.post("/", status_code=201)
@@ -75,7 +76,6 @@ async def expire_holds(
 ):
     """
     Технический эндпоинт для запуска очистки. 
-    В реальной жизни его будет дергать Cron или специальный Task Scheduler.
     """
     expired_ids = await repo.expire_old_holds()
     return {"status": "success", "expired_count": len(expired_ids), "ids": expired_ids}

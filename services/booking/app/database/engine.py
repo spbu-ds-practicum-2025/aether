@@ -1,11 +1,16 @@
 import os
+from pathlib import Path # Добавь этот импорт
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
-# ИСПРАВЛЕНИЕ: Переносим declarative_base в sqlalchemy.orm
 from sqlalchemy.orm import sessionmaker, declarative_base 
 from dotenv import load_dotenv
 
-# Загружаем переменные окружения из .env
-load_dotenv() 
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
+env_path = BASE_DIR / ".env"
+
+load_dotenv(dotenv_path=env_path)
+
+# Считываем конфигурацию
+DB_HOST = os.getenv("DB_HOST") 
 
 # Считываем конфигурацию DB из .env
 DB_HOST = os.getenv("DB_HOST")

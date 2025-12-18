@@ -1,10 +1,9 @@
 import uuid
-from sqlalchemy import Column, String, Date, DateTime, func, Index
-# Используем корректный импорт для диалекта, теперь он должен работать
-from sqlalchemy.dialects.postgresql import UUID 
+from sqlalchemy import Column, String, Date, DateTime, func, Index, Integer, JSON
+from sqlalchemy.dialects.postgresql import UUID, JSONB 
 from app.database.engine import Base
-from sqlalchemy import
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy import Column, String, Date, DateTime, func, Index, Integer, JSON
+from sqlalchemy.dialects.postgresql import UUID, JSONB
 
 class Booking(Base):
     __tablename__ = "holds_and_bookings"
