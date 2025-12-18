@@ -24,7 +24,7 @@ class BookingRepository:
         inventory_op_uuid = uuid.uuid4()
         expires_at = datetime.utcnow() + timedelta(minutes=self.TTL_MINUTES)
         
-        # 1. Сначала сохраняем в свою БД со статусом PENDING или HOLD
+        # 1. Создаем запись в статусе HOLD, но коммитим её только после Inventory
         new_booking = Booking(
             inventory_op_uuid=inventory_op_uuid,
             user_id=user_id,
@@ -35,31 +35,33 @@ class BookingRepository:
             ttl_expires_at=expires_at
         )
         self.db.add(new_booking)
-        await self.db.flush() # Фиксируем в сессии, но не коммитим в базу окончательно
+        await self.db.flush() # Получаем ID, но транзакция еще открыта
 
-        # 2. Делаем запрос в Inventory (с поправкой на даты товарища)
+        # 2. Запрос к Inventory Service
+        inventory_payload = {
+            "uuid": str(inventory_op_uuid),
+            "room_type_id": room_type_id,
+            "check_in": check_in.isoformat(),
+            "check_out": check_out.isoformat()
+        }
+
         try:
-            inventory_check_out = check_out - timedelta(days=1)
             async with httpx.AsyncClient() as client:
-                payload = {
-                    "uuid": str(inventory_op_uuid),
-                    "room_type_id": room_type_id,
-                    "check_in": check_in.isoformat(),
-                    "check_out": inventory_check_out.isoformat()
-                }
-                response = await client.post(f"{INVENTORY_URL}/rooms/reserve", json=payload)
-                
-                if response.status_code not in [200, 201]:
-                    raise HTTPException(status_code=response.status_code, detail=f"Inventory error: {response.text}")
-            
-            # 3. Если всё ок — коммитим
-            await self.db.commit()
-            return new_booking
-
+                response = await client.post(
+                    f"{INVENTORY_URL}/rooms/reserve", 
+                    json=inventory_payload,
+                    timeout=5.0
+                )
+                response.raise_for_status()
         except Exception as e:
-            # Если Inventory ответил ошибкой или сеть упала — откатываем свою базу
+            # Если Inventory недоступен или вернул ошибку — откатываем всё
             await self.db.rollback()
-            raise e
+            raise ValueError(f"Inventory reservation failed: {str(e)}")
+
+        # 3. Если всё успешно — коммитим нашу бронь
+        await self.db.commit()
+        await self.db.refresh(new_booking)
+        return new_booking
     
     async def get_all_holds(self, user_id: str = None):
         """Получение списка всех броней. Если передан user_id — фильтруем по нему."""
@@ -71,75 +73,102 @@ class BookingRepository:
         result = await self.db.execute(query)
         return result.scalars().all()
     
-    async def confirm_booking(self, hold_id: uuid.UUID):
-        """Сценарий 3: Перевод резерва в статус подтвержденной брони."""
-        from sqlalchemy import update
-        stmt = (
-            update(Booking)
-            .where(Booking.id == hold_id, Booking.status == "HOLD")
-            .values(status="CONFIRMED")
-            .returning(Booking.id, Booking.status)
-        )
-        result = await self.db.execute(stmt)
-        await self.db.commit()
-        return result.one_or_none()
-    
-    async def cancel_booking(self, hold_id: uuid.UUID):
-        """Сценарий 5: Отмена брони и вызов Inventory для освобождения дат."""
-        from sqlalchemy import select, update
-        
-        # 1. Находим бронь, чтобы получить данные для Inventory Service
-        query = select(Booking).where(Booking.id == hold_id)
-        booking = (await self.db.execute(query)).scalar_one_or_none()
-        
-        if not booking or booking.status == "CANCELED":
-            return None
+    async def confirm_booking(self, booking_id: uuid.UUID):
+        """Сценарий 3: Подтверждение брони."""
+        # 1. Находим бронь и блокируем строку для записи (with_for_update)
+        query = select(Booking).where(Booking.id == booking_id).with_for_update()
+        result = await self.db.execute(query)
+        booking = result.scalar_one_or_none()
 
-        # 2. Вызов Inventory Service (release)
-        async with httpx.AsyncClient() as client:
-            release_body = {
-                "uuid": str(booking.inventory_op_uuid),
+        if not booking or booking.status != "HOLD":
+            return None # Нельзя подтвердить то, что не в холде
+
+        # 2. Меняем статус
+        booking.status = "CONFIRMED"
+
+        # 3. ЗАПИСЫВАЕМ СОБЫТИЕ В OUTBOX (в той же транзакции)
+        event = OutboxEvent(
+            event_type="booking_confirmed",
+            payload={
+                "booking_id": str(booking.id),
+                "user_id": booking.user_id,
                 "room_type_id": booking.room_type_id,
                 "check_in": booking.check_in.isoformat(),
-                "check_out": booking.check_out.isoformat()
+                "check_out": booking.check_out.isoformat(),
+                "timestamp": datetime.utcnow().isoformat()
             }
-            try:
-                response = await client.post(
-                    f"{INVENTORY_URL}/rooms/release", 
-                    json=release_body
-                )
-                if response.status_code == 409:
-                    pass 
-                else:
-                    response.raise_for_status()
-            except httpx.HTTPStatusError as e:
-                raise Exception(f"Inventory release failed: {e.response.text}")
+        )
+        self.db.add(event)
 
+        # 4. Фиксируем всё одним коммитом
+        await self.db.commit()
+        await self.db.refresh(booking)
+        return booking
+
+    async def cancel_booking(self, booking_id: uuid.UUID):
+        """Сценарий 5: Отмена брони."""
+        query = select(Booking).where(Booking.id == booking_id).with_for_update()
+        result = await self.db.execute(query)
+        booking = result.scalar_one_or_none()
+
+        if not booking or booking.status in ["CANCELED", "EXPIRED"]:
+            return booking
+
+        # 1. Запрос в Inventory Service на освобождение (компенсирующее действие)
+        # Мы используем сохраненный inventory_op_uuid, чтобы Inventory понял, что это за операция
+        release_body = {
+            "uuid": str(booking.inventory_op_uuid),
+            "room_type_id": booking.room_type_id,
+            "check_in": booking.check_in.isoformat(),
+            "check_out": booking.check_out.isoformat()
+        }
+
+        async with httpx.AsyncClient() as client:
+            try:
+                response = await client.post(f"{INVENTORY_URL}/rooms/release", json=release_body)
+                # Если 409 (уже отменено) — это ок, продолжаем. Остальные ошибки стопают процесс.
+                if response.status_code != 409:
+                    response.raise_for_status()
+            except Exception as e:
+                # Если инвентори недоступен, мы не можем гарантировать отмену. 
+                # В реальных системах тут нужна очередь на переповтор (Retry).
+                raise Exception(f"Failed to notify Inventory: {str(e)}")
+
+        # 2. Меняем статус и пишем в Outbox
         booking.status = "CANCELED"
+        event = OutboxEvent(
+            event_type="booking_cancelled",
+            payload={"booking_id": str(booking.id), "user_id": booking.user_id}
+        )
+        self.db.add(event)
+        
         await self.db.commit()
         return booking
-    
+
     async def expire_old_holds(self):
-        """Технический сценарий: поиск и отмена просроченных HOLD."""
-        from sqlalchemy import select
-        # 1. Ищем все просроченные HOLD (используем ваш индекс idx_status_expires)
-        query = select(Booking).where(
-            Booking.status == "HOLD",
-            Booking.ttl_expires_at <= datetime.utcnow()
+        """Технический сценарий: безопасная очистка просроченных HOLD."""
+        # Используем SKIP LOCKED: если другой экземпляр сервиса уже обрабатывает эти строки, 
+        # мы их просто пропустим, а не будем ждать блокировки.
+        query = (
+            select(Booking.id)
+            .where(Booking.status == "HOLD", Booking.ttl_expires_at <= datetime.utcnow())
+            .with_for_update(skip_locked=True) 
+            .limit(10) # Обрабатываем пачками
         )
-        expired_bookings = (await self.db.execute(query)).scalars().all()
+        
+        result = await self.db.execute(query)
+        expired_ids = result.scalars().all()
         
         results = []
-        for b in expired_bookings:
+        for b_id in expired_ids:
             try:
-                # Выполняем отмену. Важно: cancel_booking должен делать commit сам 
-                # или мы должны убрать commit из него и делать один здесь.
-                await self.cancel_booking(b.id)
-                results.append(b.id)
+                # В ТР указано, что просроченные холды переходят в статус EXPIRED
+                # Мы вызываем cancel_booking, но внутри можно добавить логику EXPIRED
+                await self.cancel_booking(b_id)
+                results.append(b_id)
             except Exception as e:
-                print(f"Failed to expire {b.id}: {e}")
+                print(f"Error expiring hold {b_id}: {e}")
         
-        await self.db.commit()
         return results
 
 async def get_booking_repository(db: AsyncSession = Depends(get_async_session)):

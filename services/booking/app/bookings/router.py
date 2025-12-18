@@ -7,10 +7,10 @@ from app.bookings.repository import BookingRepository, get_booking_repository
 router = APIRouter(prefix=\"/holds\", tags=[\"Holds and Bookings\"])
 
 # Роут для создания резерва (Hold)
-@router.post("/", status_code=201) # <--- Вернули 201
+@router.post("/", status_code=201)
 async def create_new_hold(
     data: HoldCreateSchema,
-    repo: BookingRepository = Depends(get_booking_repository) # <--- РАСКОММЕНТИРОВАНО
+    repo: BookingRepository = Depends(get_booking_repository)
 ):
     """
     Создает временный резерв (HOLD) в Booking Service и атомарно 

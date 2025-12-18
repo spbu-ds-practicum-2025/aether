@@ -3,6 +3,8 @@ from sqlalchemy import Column, String, Date, DateTime, func, Index
 # Используем корректный импорт для диалекта, теперь он должен работать
 from sqlalchemy.dialects.postgresql import UUID 
 from app.database.engine import Base
+from sqlalchemy import
+from sqlalchemy.dialects.postgresql import JSONB
 
 class Booking(Base):
     __tablename__ = "holds_and_bookings"
@@ -32,3 +34,12 @@ class Booking(Base):
         # Индекс для быстрого поиска просроченных резервов
         Index("idx_status_expires", status, ttl_expires_at), 
     )
+    
+class OutboxEvent(Base):
+    __tablename__ = "outbox_events"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    event_type = Column(String, nullable=False)  # Например, "booking_confirmed"
+    payload = Column(JSON, nullable=False)       # Сами данные (user_id, email, dates)
+    status = Column(String, default="PENDING")   # PENDING, PROCESSED, FAILED
+    created_at = Column(DateTime, server_default=func.now())

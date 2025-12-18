@@ -5,17 +5,21 @@ from uuid import UUID
 
 # Схема для создания нового резерва (Hold)
 class HoldCreateSchema(BaseModel):
-    # Примечание: user_id должен приходить из системы аутентификации, 
-    # но для MVP мы берем его из тела запроса.
-    user_id: str = Field(..., description="Идентификатор пользователя, создающего резерв.")
-    room_type_id: str = Field(..., description="Тип номера, который нужно зарезервировать.")
-    check_in: date = Field(..., description="Дата заезда (включительно).")
-    check_out: date = Field(..., description="Дата выезда (не включительно).")
+    user_id: str
+    room_type_id: str
+    check_in: date
+    check_out: date
 
-    # Валидация: check_in должен быть раньше check_out
+    @validator('check_in')
+    def check_in_not_in_past(cls, v):
+        if v < date.today():
+            raise ValueError('check_in date cannot be in the past.')
+        return v
+
     @validator('check_out')
     def validate_dates(cls, v, values):
-        if 'check_in' in values and v <= values['check_in']:
+        # Твоя существующая логика сравнения check_in и check_out
+        if 'check_in' in values and v <= values['check_in']]:
             raise ValueError('check_out must be strictly after check_in date.')
         return v
 
