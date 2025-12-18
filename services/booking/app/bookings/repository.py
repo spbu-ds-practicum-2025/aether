@@ -21,40 +21,11 @@ class BookingRepository:
         self.TTL_MINUTES = 15
 
     async def create_hold(self, user_id: str, room_type_id: str, check_in: date, check_out: date):
-        
-        # 1. Генерируем UUID для идемпотентности Inventory Service
         inventory_op_uuid = uuid.uuid4()
         expires_at = datetime.utcnow() + timedelta(minutes=self.TTL_MINUTES)
         
-        # 2. АТОМАРНОЕ РЕЗЕРВИРОВАНИЕ В ДРУГОМ СЕРВИСЕ
-        
-        inventory_body = {
-            "uuid": str(inventory_op_uuid),
-            "room_type_id": room_type_id,
-            "check_in": check_in.isoformat(),
-            "check_out": check_out.isoformat()
-        }
-        
-        async with httpx.AsyncClient() as client:
-            try:
-                # Отправляем запрос на блокировку инвентаря
-                response = await client.post(
-                    f"{INVENTORY_URL}/rooms/reserve", 
-                    json=inventory_body
-                )
-                response.raise_for_status() 
-                
-            except httpx.HTTPStatusError as e:
-                # 409 CONFLICT означает, что инвентаря нет (или идемпотентный повтор failed-операции)
-                if e.response.status_code == 409:
-                    raise ValueError("Reservation failed: No inventory available for the requested range.")
-                
-                # Любая другая ошибка (например, 400 Bad Request от Inventory)
-                raise e 
-
-        # 3. Если Inventory Service вернул 200/201 (Успешно):
-        # Записываем HOLD в нашу Booking DB
-        stmt = insert(Booking).values(
+        # 1. Сначала сохраняем в свою БД со статусом PENDING или HOLD
+        new_booking = Booking(
             inventory_op_uuid=inventory_op_uuid,
             user_id=user_id,
             room_type_id=room_type_id,
@@ -62,13 +33,33 @@ class BookingRepository:
             check_out=check_out,
             status="HOLD",
             ttl_expires_at=expires_at
-        ).returning(Booking.id, Booking.status, Booking.ttl_expires_at)
-        
-        result = await self.db.execute(stmt)
-        await self.db.commit()
+        )
+        self.db.add(new_booking)
+        await self.db.flush() # Фиксируем в сессии, но не коммитим в базу окончательно
 
-        # Получаем данные созданного резерва
-        return result.one()
+        # 2. Делаем запрос в Inventory (с поправкой на даты товарища)
+        try:
+            inventory_check_out = check_out - timedelta(days=1)
+            async with httpx.AsyncClient() as client:
+                payload = {
+                    "uuid": str(inventory_op_uuid),
+                    "room_type_id": room_type_id,
+                    "check_in": check_in.isoformat(),
+                    "check_out": inventory_check_out.isoformat()
+                }
+                response = await client.post(f"{INVENTORY_URL}/rooms/reserve", json=payload)
+                
+                if response.status_code not in [200, 201]:
+                    raise HTTPException(status_code=response.status_code, detail=f"Inventory error: {response.text}")
+            
+            # 3. Если всё ок — коммитим
+            await self.db.commit()
+            return new_booking
+
+        except Exception as e:
+            # Если Inventory ответил ошибкой или сеть упала — откатываем свою базу
+            await self.db.rollback()
+            raise e
     
     async def get_all_holds(self, user_id: str = None):
         """Получение списка всех броней. Если передан user_id — фильтруем по нему."""
@@ -112,13 +103,17 @@ class BookingRepository:
                 "check_in": booking.check_in.isoformat(),
                 "check_out": booking.check_out.isoformat()
             }
-            response = await client.post(
-                f"{INVENTORY_URL}/rooms/release", 
-                json=release_body
-            )
-            
-            if response.status_code not in [200, 201]:
-                raise Exception(f"Inventory release failed: {response.text}")
+            try:
+                response = await client.post(
+                    f"{INVENTORY_URL}/rooms/release", 
+                    json=release_body
+                )
+                if response.status_code == 409:
+                    pass 
+                else:
+                    response.raise_for_status()
+            except httpx.HTTPStatusError as e:
+                raise Exception(f"Inventory release failed: {e.response.text}")
 
         booking.status = "CANCELED"
         await self.db.commit()

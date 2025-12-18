@@ -1,9 +1,10 @@
 from fastapi import APIRouter, HTTPException, Depends
-from sqlalchemy.ext.asyncio import AsyncSession # Оставьте, это может потребоваться для зависимостей
-from app.bookings.schemas import HoldCreateSchema
-from app.bookings.repository import BookingRepository, get_booking_repository # <--- РАСКОММЕНТИРОВАНО
+import uuid
+# Добавьте явный импорт схемы:
+from app.bookings.schemas import HoldCreateSchema, HoldResponseSchema 
+from app.bookings.repository import BookingRepository, get_booking_repository
 
-router = APIRouter(prefix="/holds", tags=["Holds and Bookings"])
+router = APIRouter(prefix=\"/holds\", tags=[\"Holds and Bookings\"])
 
 # Роут для создания резерва (Hold)
 @router.post("/", status_code=201) # <--- Вернули 201
