@@ -88,7 +88,12 @@ class RoomDAO:
 
                 rooms = await session.execute(query)
             else:
-                rooms = await session.execute(all_rooms)
+                query = select(
+                    RoomTypes.__table__.columns,
+                    RoomTypes.total_quantity.label("available_quantity")
+                )
+                rooms = await session.execute(query)
+                # rooms = await session.execute(all_rooms)
 
             rooms = rooms.mappings().all()
             return rooms
