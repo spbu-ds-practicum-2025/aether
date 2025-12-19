@@ -1,7 +1,10 @@
-from fastapi import FastAPI
-from app.bookings.router import router as booking_router
 import asyncio
+
+from fastapi import FastAPI
+
+from app.bookings.cleanup_worker import expire_holds_worker
 from app.bookings.publisher import publish_outbox_events
+from app.bookings.router import router as booking_router
 
 app = FastAPI(
     title="Booking Service",
@@ -9,15 +12,18 @@ app = FastAPI(
     version="1.0.0",
 )
 
+
 @app.get("/health")
 def health_check():
-    """Проверка работоспособности сервиса."""
     return {"status": "ok", "service": "booking"}
+
 
 @app.on_event("startup")
 async def startup_event():
-    # Запускаем воркер в фоне, чтобы он не блокировал основной поток API
+    # Запускаем фоновые задачи при старте приложения
     asyncio.create_task(publish_outbox_events())
+    asyncio.create_task(expire_holds_worker())
 
-# 1. Подключение роутеров
+
+# 1. Подключение основного роутера
 app.include_router(booking_router, tags=["Holds and Bookings"], prefix="/api/v1")
