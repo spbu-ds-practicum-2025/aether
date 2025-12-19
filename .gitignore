@@ -1,5 +1,9 @@
+#IDE
 .vscode/
 .idea/
-.venv/
-.env
-__pycache__/
+#environment
+.env*
+
+#python
+__pycache__
+.venv

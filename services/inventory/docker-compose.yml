@@ -1,0 +1,21 @@
+services:
+  db:
+    image: postgres:15
+    container_name: inventory_db
+    env_file:
+      - .env-non-dev
+    ports:
+      - 5432:5432
+
+  inventory:
+    image: inventory_image
+    build:
+      context: .
+    container_name: inventory_app
+    env_file:
+      - .env-non-dev
+    depends_on:
+      - db
+    command: ["/inventory/scripts/app.sh"]
+    ports:
+      - 9000:8000
