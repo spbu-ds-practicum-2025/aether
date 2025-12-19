@@ -132,8 +132,9 @@ class BookingRepository:
 
         # 1. Запрос в Inventory Service на освобождение (компенсирующее действие)
         # Мы используем сохраненный inventory_op_uuid, чтобы Inventory понял, что это за операция
+        release_uuid = uuid.uuid4()
         release_body = {
-            "uuid": str(booking.inventory_op_uuid),
+            "uuid": str(release_uuid),
             "room_type_id": booking.room_type_id,
             "check_in": booking.check_in.isoformat(),
             "check_out": booking.check_out.isoformat()
