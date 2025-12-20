@@ -23,7 +23,7 @@ class BookingRepository:
     def __init__(self, db: AsyncSession):
         self.db = db
         # Время жизни резерва (TTL) - 15 минут
-        self.TTL_MINUTES = 15
+        self.TTL_MINUTES = 1
 
     async def create_hold(self, user_id: str, room_type_id: str, check_in: date, check_out: date):
         inventory_op_uuid = uuid.uuid4()
