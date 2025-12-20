@@ -86,6 +86,17 @@ services:
     ports:
       - "8001:8000"
 
+  api-gateway:
+    build:
+      context: ./services/api-gateway
+    depends_on:
+      booking:
+        condition: service_started
+      inventory:
+        condition: service_started
+    ports:
+      - "8080:80"
+
 volumes:
   booking_db_data:
   inventory_db_data:
