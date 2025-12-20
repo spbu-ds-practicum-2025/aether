@@ -23,7 +23,7 @@ class BookingRepository:
     def __init__(self, db: AsyncSession):
         self.db = db
         # Время жизни резерва (TTL) - 15 минут
-        self.TTL_MINUTES = 15
+        self.TTL_MINUTES = 1
 
     async def create_hold(self, user_id: str, room_type_id: str, check_in: date, check_out: date):
         inventory_op_uuid = uuid.uuid4()
@@ -132,8 +132,9 @@ class BookingRepository:
 
         # 1. Запрос в Inventory Service на освобождение (компенсирующее действие)
         # Мы используем сохраненный inventory_op_uuid, чтобы Inventory понял, что это за операция
+        release_uuid = uuid.uuid4()
         release_body = {
-            "uuid": str(booking.inventory_op_uuid),
+            "uuid": str(release_uuid),
             "room_type_id": booking.room_type_id,
             "check_in": booking.check_in.isoformat(),
             "check_out": booking.check_out.isoformat()
